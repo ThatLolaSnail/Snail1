@@ -18,7 +18,7 @@
 
 
 ;####################
-;# SD_SEND_CMD@C0B0 #
+;# SD_SEND_CMD@C0AD #
 ;####################
 org 0x000D ; 0xC0AD
 SD_SEND_CMD:
@@ -63,14 +63,14 @@ SD_SEND_NEXT_BIT:
 
 
 ;###########################
-;# SD_REC_WAIT_SINGLE@C0B0 #
+;# SD_REC_WAIT_SINGLE@C0D6 #
 ;###########################
 org 0x0036 ; 0xc0d6
 SD_REC_WAIT_SINGLE:
 	LD DE,0x0001 ; 1 byte
 	LD B, 7      ; 7 bits (and the start bit.)
 ;####################
-;# SD_REC_WAIT@C0B0 #
+;# SD_REC_WAIT@C0DB #
 ;####################
 org 0x003b ; 0xc0db
 SD_REC_WAIT:
@@ -123,15 +123,4 @@ SD_REC_NEXT_BIT:
 SD_REC_END:
 	POP AF
 	RET
-
-	
-
-
-
-
-
-	
-
-ld hl, SD_REC
-
 
