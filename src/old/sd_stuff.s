@@ -1,3 +1,4 @@
+.equ BASE, 0xC0A0
 ;###################################################
 ;# ThatLolaSnail - github.com/ThatLolaSnail/Snail1 #
 ;###################################################
@@ -20,7 +21,7 @@
 ;####################
 ;# SD_SEND_CMD@C0AD #
 ;####################
-org 0x000D ; 0xC0AD
+org 0xC0AD-BASE ; 0xC0AD
 SD_SEND_CMD:
 	LD DE, 0x0006 ;send 6 bytes
 ;################
@@ -65,14 +66,14 @@ SD_SEND_NEXT_BIT:
 ;###########################
 ;# SD_REC_WAIT_SINGLE@C0D6 #
 ;###########################
-org 0x0036 ; 0xc0d6
+org 0xC0D6-BASE ; 0xc0d6
 SD_REC_WAIT_SINGLE:
 	LD DE,0x0001 ; 1 byte
 	LD B, 7      ; 7 bits (and the start bit.)
 ;####################
 ;# SD_REC_WAIT@C0DB #
 ;####################
-org 0x003b ; 0xc0db
+org 0xC0DB-BASE ; 0xc0db
 SD_REC_WAIT:
 ;HL = Data output
 ;B  = bits in first byte (after the leading 0)
@@ -95,7 +96,7 @@ SD_REC_WAIT_LOOP:
 ;###############
 ;# SD_REC@C0F0 #
 ;###############
-org 0x0050 ; 0xc0f0
+org 0xC0F0-BASE ; 0xc0f0
 SD_REC:
 	PUSH AF
 	PUSH BC
@@ -123,4 +124,91 @@ SD_REC_NEXT_BIT:
 SD_REC_END:
 	POP AF
 	RET
+
+
+;################
+;# SD_INIT@C120 #
+;################
+org 0xC120-BASE
+SD_INIT:
+	PUSH BC
+	PUSH DE
+	PUSH HL
+	PUSH AF
+	LD B, 0x50 ; 80 is more than the required 74 empty cycles.
+SD_INIT_LOOP:
+	  LD A, 0b1111 ;clock high
+	  OUT (SD_OUT), A
+	  LD A, 0b1101 ;clock low
+	  OUT (SD_OUT), A
+	DJNZ SD_INIT_LOOP
+
+SD_INIT_RETRY_RESET:
+	LD HL, CMD0
+	  CALL SD_SEND_CMD	  ;send cmd0
+	  CALL SD_REC_WAIT_SINGLE ;receive 7-bit answer
+	  LD A, C
+	  OR A			  ;test if successfull
+	JR Z, SD_INIT_RETRY_RESET ;and retry if not
+
+	nop ;because it was there in my handwritten program...
+
+;send ACMD41
+	LD a, 0xff
+	LD (RESP41), A ;assume not ready, and write this there.
+SD_INIT_RETRY_ACMD41:
+	  LD HL, CMD55
+	  CALL SD_SEND_CMD		;send CMD55
+	  CALL SD_REC_WAIT_SINGLE
+	  LD A, C
+	  OR A
+	JR Z, SD_INIT_RETRY_ACMD41	;retry if error
+
+	  CALL SD_SEND_CMD		;send CMD41
+	  CALL SD_REC_WAIT_SINGLE
+
+	  LD A, (RESP41)		;this will be either the result
+	  OR A				;(or the ff we wrote there before)
+	JR NZ, SD_INIT_RETRY_ACMD41	;Retry if not successfull
+
+	;Select block size
+	CALL SD_SEND_CMD	;CMD16
+	CALL SD_REC_WAIT_SINGLE
+
+	;return
+	POP AF
+	POP HL
+	POP DE
+	POP BC
+	RET
+
+;data:
+CMD0:	;reset
+	db 0x40 db 0x00  db 0x00 db 0x00  db 0x00 db 0x95
+RESP0:
+	db 0xFF
+CMD55:	;extended commands
+	db 0x77 db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF
+RESP55:
+	db 0xFF
+CMD41:	;in combination with 55: ACM41: INIT
+	db 0x69 db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF
+RESP41:
+	db 0xFF
+CMD16:	;change blocksize to 512 (default)
+	db 0x50 db 0x00  db 0x00 db 0x02  db 0x00 db 0xFF
+RESP16:
+	db 0XFF
+	
+
+
+
+
+	
+
+
+
+
+
+
 
