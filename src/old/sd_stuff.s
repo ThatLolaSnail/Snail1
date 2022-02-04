@@ -22,12 +22,14 @@
 ;####################
 ;# SD_SEND_CMD@C0AD #
 ;####################
+;send 6 bytes, used for sending commands (which are 6 bytes)
 org 0xC0AD-BASE ; 0xC0AD
 SD_SEND_CMD:
 	LD DE, 0x0006 ;send 6 bytes
 ;################
 ;# SD_SEND@C0B0 #
 ;################
+;send DE bytes of data to the sd card.
 org 0xC0B0-BASE ; 0xC0B0
 SD_SEND:
 ;DE = No. of bytes
@@ -67,6 +69,7 @@ SD_SEND_NEXT_BIT:
 ;###########################
 ;# SD_REC_WAIT_SINGLE@C0D6 #
 ;###########################
+;pulse clock until the card sends the normal response and receive the response.
 org 0xC0D6-BASE ; 0xc0d6
 SD_REC_WAIT_SINGLE:
 	LD DE,0x0001 ; 1 byte
@@ -74,6 +77,7 @@ SD_REC_WAIT_SINGLE:
 ;####################
 ;# SD_REC_WAIT@C0DB #
 ;####################
+;pulse clock until the card sends data, and then receive the specified amount.
 org 0xC0DB-BASE ; 0xc0db
 SD_REC_WAIT:
 ;HL = Data output
@@ -97,6 +101,7 @@ SD_REC_WAIT_LOOP:
 ;###############
 ;# SD_REC@C0F0 #
 ;###############
+;receive card data, assume it starts with the first clock cycle. (used when we already received using the SD_REC_WAIT)
 org 0xC0F0-BASE ; 0xc0f0
 SD_REC:
 	PUSH AF
@@ -130,6 +135,7 @@ SD_REC_END:
 ;################
 ;# SD_INIT@C120 #
 ;################
+;send the commands needed for initializing the card. call this when the computer starts (or the card is changed)
 org 0xC120-BASE
 SD_INIT:
 	PUSH BC
@@ -213,14 +219,17 @@ CMD12:	db 0x4C db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF db 0xFF ;Stop Read (and
 RESP12:	db 0xFF
 CMD25:	db 0x59 db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF	  ;Write Multiple
 RESP25:	db 0xFF
-DATA_TOKEN: db 0xFF db 0xFC	    ;Data Token for CMD25
-STOP_TOKEN: db 0xFF db 0xFD db 0xFF ;Stop Token for CMD25 (and empty FF byte)
+DATA_TOKEN: db 0xFF db 0xFC	    ;Data Token for CMD25 ; including the wait before that
+STOP_TOKEN: db 0xFF db 0xFD db 0xFF ;Stop Token for CMD25 ; including the wait before and after (aka empty FF byte)
 
 SCRATCHPAD: db 0xFF db 0xFF ;2 usless bytes, scrap values will be stored here (CRC and stuff)
+
+EQU CRC, SCRATCHPAD-2 ;use the 2 bytes before the cratchpad, the FDFF from the stop token, as the fake CRC
 
 ;##########################
 ;# SD_WAIT_RESP_WAIT@C1A0 #
 ;##########################
+;pulse clock until sd card sends response, receive it, and wait for the card to finish processing
 org 0xC1A0-BASE
 SD_WAIT_RESP_WAIT:
 	PUSH AF
@@ -233,6 +242,7 @@ SD_WAIT_RESP_WAIT:
 ;################
 ;# SD_WAIT@C1AA #
 ;################
+;pulse clock until the sd card has finished processing
 org 0xC1AA-BASE
 SD_WAIT:
 	PUSH AF
@@ -250,6 +260,7 @@ SD_WAIT_LOOP:
 ;########################
 ;# SD_READ_SECTORS@C1C0 #
 ;########################
+;read A sectors from disk at BCDE to HL in RAM
 org 0xC1C0-BASE
 SD_READ_SECTORS:
 ;HL   = Dest
@@ -299,13 +310,77 @@ SD_READ_BLOCK:
 	RET
 
 
+;#########################
+;# SD_WRITE_SECTORS@C200 #
+;#########################
+;write A sectors from RAM at HL to adress BCDE on the disk
+org 0xC200-BASE
+SD_WRITE_SECTORS:
+;HL   = Source
+;BCDE = Sector
+;A    = No. of sectors
+	PUSH BC
+	PUSH DE
+	PUSH AF
+	PUSH HL
 
-	
+	LD HL, CMD25+1
+	LD (HL),B 
+	INC HL
+	LD (HL),C 
+	INC HL
+	LD (HL),D 
+	INC HL
+	LD (HL),E
+
+	;send the command to the sd card and get the response
+	LD HL, CMD25
+	CALL SD_SEND_CMD
+	CALL SD_REC_WAIT_SINGLE
+
+	;now write next data block
+SD_WRITE_NEXT_BLOCK:
+	  ;first the start token
+	  LD HL, DATA_TOKEN ;address of the data token
+	  LD DE, 0x0002     ;length, 2 bytes in this case
+	  CALL SD_SEND      ;Send the data token
+	  
+	  ;then the data
+	  POP HL
+	  LD DE, 0x0200
+	  CALL SD_SEND
+	  PUSH HL
+
+	  ;send fake CRC
+	  LD HL, CRC
+	  LD DE, 0x0002
+	  CALL SD_SEND
+
+	  ;now receive data response: 0xxxx where the xxxx is the 4-bit response (either 0101=accepted or 1XX1=error)
+	  LD B,4		;4 bits
+	  LD DE, 0x0001	;1 byte (which has 4 bits)
+	  CALL SD_REC_WAIT
+	  ;and wait for the card to finish processing
+	  CALL SD_WAIT
+
+	;decrement counter and repeat
+	DEC A
+	JR NZ, SD_WRITE_NEXT_BLOCK
+
+	;tell the card to stop
+	LD HL, STOP_TOKEN
+	LD DE, 0x0003 ;send 3 bytes, one byte as a wait, the actual stop token, and one more for wait.
+	CALL SD_SEND
+	;wait for the sd card to finish processing
+	CALL SD_WAIT
+
+	POP HL
+	POP AF
+	POP DE
+	POP BC
+	RET
 
 
-
-
-	
 
 
 

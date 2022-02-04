@@ -28,7 +28,7 @@ $(BIN): $(OBJECT) linker.ld
 
 $(OBJECT): $(SOURCE)
 	$(AS) $< -o $@
-	$(OBJDUMP) -d $@
+	#$(OBJDUMP) -d $@
 
 
 .PHONY: all clean
