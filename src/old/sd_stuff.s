@@ -1,4 +1,5 @@
 .equ BASE, 0xC0A0
+#.equ BASE, 0x0000
 ;###################################################
 ;# ThatLolaSnail - github.com/ThatLolaSnail/Snail1 #
 ;###################################################
@@ -27,7 +28,7 @@ SD_SEND_CMD:
 ;################
 ;# SD_SEND@C0B0 #
 ;################
-org 0x0010 ; 0xC0B0
+org 0xC0B0-BASE ; 0xC0B0
 SD_SEND:
 ;DE = No. of bytes
 ;HL = Data
@@ -117,7 +118,7 @@ SD_REC_NEXT_BIT:
 	  LD B, 8    ;next byte will have 8 bits
 	  DEC DE     ;one byte less to receive
 	  LD A, D
-	  OR E       ;irgendein vergleich? von D und E???
+	  OR E       ;if DE==0 then D OR E will set 0-bit
 	  JR NZ, SD_REC_NEXT_BYTE
 	POP DE
 	POP BC
@@ -182,7 +183,7 @@ SD_INIT_RETRY_ACMD41:
 	POP BC
 	RET
 
-;data:
+;sd commands
 CMD0:	;reset
 	db 0x40 db 0x00  db 0x00 db 0x00  db 0x00 db 0x95
 RESP0:
@@ -199,6 +200,106 @@ CMD16:	;change blocksize to 512 (default)
 	db 0x50 db 0x00  db 0x00 db 0x02  db 0x00 db 0xFF
 RESP16:
 	db 0XFF
+
+
+
+;now the stuff from the next page...
+
+;more sd commands
+org 0xC183-BASE
+CMD18:	db 0x52 db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF	  ;Read Multiple
+RESP18:	db 0xFF
+CMD12:	db 0x4C db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF db 0xFF ;Stop Read (and clock empty FF byte)
+RESP12:	db 0xFF
+CMD25:	db 0x59 db 0x00  db 0x00 db 0x00  db 0x00 db 0xFF	  ;Write Multiple
+RESP25:	db 0xFF
+DATA_TOKEN: db 0xFF db 0xFC	    ;Data Token for CMD25
+STOP_TOKEN: db 0xFF db 0xFD db 0xFF ;Stop Token for CMD25 (and empty FF byte)
+
+SCRATCHPAD: db 0xFF db 0xFF ;2 usless bytes, scrap values will be stored here (CRC and stuff)
+
+;##########################
+;# SD_WAIT_RESP_WAIT@C1A0 #
+;##########################
+org 0xC1A0-BASE
+SD_WAIT_RESP_WAIT:
+	PUSH AF
+	PUSH BC	
+	PUSH DE
+	CALL SD_REC_WAIT_SINGLE ;read 7 bit response
+	POP DE
+	POP BC
+	POP AF ;JR SD_WAIT_AFTER_PUSH initially I just jumped over the PUSH, now I just POP, so I don't have to jump over the PUSH
+;################
+;# SD_WAIT@C1AA #
+;################
+org 0xC1AA-BASE
+SD_WAIT:
+	PUSH AF
+SD_WAIT_LOOP:
+	  LD A, 0b1001
+	  OUT (SD_OUT), A
+	  LD A, 0b1011	;clock in next bit 
+	  OUT (SD_OUT), A
+	  IN A,(SD_IN)
+	  BIT 0,A
+	JR Z, SD_WAIT_LOOP
+	POP AF
+	RET
+
+;########################
+;# SD_READ_SECTORS@C1C0 #
+;########################
+org 0xC1C0-BASE
+SD_READ_SECTORS:
+;HL   = Dest
+;BCDE = Sector
+;A    = No. of sectors
+	PUSH BC
+	PUSH DE
+	PUSH AF
+	PUSH HL
+
+	LD HL, CMD18+1
+	LD (HL),B 
+	INC HL
+	LD (HL),C 
+	INC HL
+	LD (HL),D 
+	INC HL
+	LD (HL),E
+
+	LD HL, CMD18
+	CALL SD_SEND_CMD ;send CMD18
+	CALL SD_REC_WAIT_SINGLE ;response
+
+	;now read next data block
+SD_READ_BLOCK:
+	  POP HL
+	  LD DE, 0x0200	 ;512 bytes
+	  LD B, 8		 ;first byte has 8 bit (after the 0)
+	  CALL SD_REC_WAIT ;Get Data
+	  PUSH HL
+	  LD DE, 0x0002
+	  LD HL, SCRATCHPAD
+	  CALL SD_REC	;Get CRC :-) ... And discard it...
+	
+	  DEC A
+	JR NZ, SD_READ_BLOCK
+
+	LD HL, CMD12
+	LD DE, 0x0007 ;send CMD12 and wait a byte (0xFF until the sd card actually stops the data)
+	CALL SD_SEND
+	CALL SD_WAIT_RESP_WAIT ;Get the response and wait for Ready
+
+	POP HL
+	POP AF
+	POP DE
+	POP BC
+	RET
+
+
+
 	
 
 

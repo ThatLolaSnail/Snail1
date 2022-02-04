@@ -13,7 +13,7 @@ OBJECT:=$(NAME).o
 AS:=z80-elf-as
 LD:=z80-elf-ld
 OBJDUMP:=z80-elf-objdump
-HEXDUMP:=xxd
+HEXDUMP:=xxd -a
 
 LD_FLAGS:= --no-undefined 
 
