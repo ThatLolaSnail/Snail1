@@ -22,8 +22,13 @@
 equ SER_IN,   0x10
 
 
-;set up registers code
+; B O O T
 	nop
+;jump instruction (change this to run your loaded program)
+	jp setup
+setup:
+
+;set up registers code
 	ld sp, 0x0000 ;set up stack
 	ld hl, ser_buffer ;load serial buffer address in HL
 	im 1 	; an interrupt in mode 1 will do a call to 0x38
